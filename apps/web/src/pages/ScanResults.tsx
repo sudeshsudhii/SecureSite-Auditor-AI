@@ -16,7 +16,7 @@ const ScanResults = () => {
 
     const { url, cookies, scripts, aiAnalysis } = data;
     const score = aiAnalysis?.score || 0;
-    const riskLevel = aiAnalysis?.riskLevel || 'UNKNOWN';
+
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -31,8 +31,8 @@ const ScanResults = () => {
                         <p className="text-gray-500">{url}</p>
                     </div>
                     <div className={`mt-4 md:mt-0 px-6 py-3 rounded-full flex items-center space-x-2 ${score > 80 ? 'bg-green-100 text-green-700' :
-                            score > 50 ? 'bg-amber-100 text-amber-700' :
-                                'bg-red-100 text-red-700'
+                        score > 50 ? 'bg-amber-100 text-amber-700' :
+                            'bg-red-100 text-red-700'
                         }`}>
                         <ShieldCheck className="w-6 h-6" />
                         <span className="text-2xl font-bold">{score}/100</span>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Save, Bell, Moon, Shield, Key } from 'lucide-react';
+import { Save, Shield, Key } from 'lucide-react';
 
 const Settings = () => {
     const [isDark, setIsDark] = React.useState(() => {

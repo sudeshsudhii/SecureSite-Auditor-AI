@@ -1,5 +1,4 @@
-import React from 'react';
-import { Outlet, NavLink, Link } from 'react-router-dom';
+import { Outlet, NavLink } from 'react-router-dom';
 import { Shield, LayoutDashboard, History, Settings } from 'lucide-react';
 
 const DashboardLayout = () => {

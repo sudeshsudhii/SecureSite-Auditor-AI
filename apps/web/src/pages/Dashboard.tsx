@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, Globe, ShieldAlert, CheckCircle } from 'lucide-react';
+import { Globe, ShieldAlert, CheckCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
