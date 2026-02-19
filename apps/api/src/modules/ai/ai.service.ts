@@ -112,7 +112,10 @@ export class AiService {
         return this.parseJson(text);
     }
 
-    private parseJson(text: string): any {
+    private parseJson(text: string | null): any {
+        if (!text) {
+            throw new Error('Empty response from AI provider');
+        }
         try {
             const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
             return JSON.parse(jsonStr);
