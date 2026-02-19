@@ -11,7 +11,7 @@
     "db:down": "docker-compose down",
     "api:dev": "npm run start:dev -w apps/api",
     "web:dev": "npm run dev -w apps/web",
-    "build:api": "npm install && npx prisma generate && npm run build -w apps/api"
+    "build:api": "npm install && npx prisma generate --schema=./prisma/schema.prisma && npm run build -w apps/api"
   },
   "devDependencies": {
     "prisma": "^5.10.0"
