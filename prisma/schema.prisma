@@ -1,0 +1,34 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      String     @default("USER") // Was Role enum
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  scans     Scan[]
+}
+
+model Scan {
+  id          String     @id @default(uuid())
+  url         String
+  status      String     @default("PENDING") // Was ScanStatus enum
+  score       Int?
+  report      String? // SQLite no Json support
+  aiProvider  String?
+  riskLevel   String?
+  screenshot  String?
+  startedAt   DateTime   @default(now())
+  completedAt DateTime?
+  userId      String?
+  user        User?       @relation(fields: [userId], references: [id])
+}

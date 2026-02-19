@@ -1,0 +1,21 @@
+{
+  "name": "privacycheck-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "libs/*"
+  ],
+  "scripts": {
+    "db:up": "docker-compose up -d",
+    "db:down": "docker-compose down",
+    "api:dev": "npm run start:dev -w apps/api",
+    "web:dev": "npm run dev -w apps/web"
+  },
+  "devDependencies": {
+    "prisma": "^5.10.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  }
+}
