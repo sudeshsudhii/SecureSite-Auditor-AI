@@ -10,8 +10,11 @@ export class AppController {
   ) {}
 
   @Get()
-  getHello(): string {
-    return this.appService.getHello();
+  getRoot() {
+    return {
+      message: 'SecureSite Auditor API is running',
+      endpoints: ['/api/scan', '/api/auth', '/health'],
+    };
   }
 
   @Get('health')

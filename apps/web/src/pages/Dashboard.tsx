@@ -33,7 +33,11 @@ const Dashboard = () => {
             navigate('/scan/result', { state: { data: response.data } });
         } catch (err: any) {
             console.error(err);
-            setError(err.response?.data?.message || 'Failed to scan website. Please make sure backend is running.');
+            if (err.response?.data?.message) {
+                setError(err.response.data.message);
+            } else {
+                setError('Backend unavailable. Please try again later.');
+            }
         } finally {
             setLoading(false);
         }
