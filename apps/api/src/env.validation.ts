@@ -25,6 +25,10 @@ class EnvironmentVariables {
   @IsString()
   @IsOptional()
   GEMINI_API_KEY?: string;
+
+  @IsString()
+  @IsOptional()
+  FRONTEND_URL?: string;
 }
 
 export function validate(config: Record<string, unknown>) {

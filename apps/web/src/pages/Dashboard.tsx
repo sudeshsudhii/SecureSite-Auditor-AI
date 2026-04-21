@@ -30,11 +30,20 @@ const Dashboard = () => {
         setError(null);
         try {
             const response = await api.post('/scan', { url });
-            navigate('/scan/result', { state: { data: response.data } });
+            const result = response.data;
+
+            // Handle controlled error response (API returns 200 with status: 'error')
+            if (result.status === 'error') {
+                setError(result.message || 'Scan failed. Please try again.');
+                return;
+            }
+
+            // Navigate with the inner data payload
+            navigate('/scan/result', { state: { data: result.data || result } });
         } catch (err: any) {
             console.error(err);
             if (err.response?.data?.message) {
-                setError(err.response.data.message);
+                setError(Array.isArray(err.response.data.message) ? err.response.data.message.join(', ') : err.response.data.message);
             } else {
                 setError('Backend unavailable. Please try again later.');
             }

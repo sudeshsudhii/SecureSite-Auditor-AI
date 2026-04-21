@@ -11,6 +11,3 @@ declare module 'robots-parser' {
     function robotsParser(url: string, robotsTxtContent: string): Robot;
     export = robotsParser;
 }
-
-declare module 'puppeteer-extra';
-declare module 'puppeteer-extra-plugin-stealth';

@@ -1,209 +1,363 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy, BadRequestException } from '@nestjs/common';
-// @ts-ignore
-import puppeteer from 'puppeteer-extra';
-// @ts-ignore
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import * as cheerio from 'cheerio';
-// @ts-ignore
-import robotsParser from 'robots-parser';
+import axios, { AxiosResponse } from 'axios';
 import { AiService } from '../ai/ai.service';
-import { Browser, Page } from 'puppeteer';
-import axios from 'axios';
 import { PrismaService } from '../../prisma/prisma.service';
 
+// Known tracker/analytics script patterns
+const TRACKER_PATTERNS = [
+  { pattern: /google-analytics\.com|googletagmanager\.com|gtag/i, name: 'Google Analytics' },
+  { pattern: /facebook\.net|fbevents|connect\.facebook/i, name: 'Facebook Pixel' },
+  { pattern: /hotjar\.com/i, name: 'Hotjar' },
+  { pattern: /clarity\.ms/i, name: 'Microsoft Clarity' },
+  { pattern: /doubleclick\.net/i, name: 'Google DoubleClick' },
+  { pattern: /segment\.com|segment\.io/i, name: 'Segment' },
+  { pattern: /mixpanel\.com/i, name: 'Mixpanel' },
+  { pattern: /amplitude\.com/i, name: 'Amplitude' },
+  { pattern: /tiktok\.com\/i18n\/pixel/i, name: 'TikTok Pixel' },
+  { pattern: /snap\.licdn\.com|linkedin\.com\/px/i, name: 'LinkedIn Insight' },
+  { pattern: /twitter\.com\/i\/adsct|t\.co\/i\/adsct/i, name: 'Twitter Ads' },
+  { pattern: /adsbygoogle|pagead2\.googlesyndication/i, name: 'Google Ads' },
+  { pattern: /pinterest\.com\/ct/i, name: 'Pinterest Tag' },
+  { pattern: /bat\.bing\.com/i, name: 'Bing UET' },
+  { pattern: /intercom\.io/i, name: 'Intercom' },
+  { pattern: /crisp\.chat/i, name: 'Crisp Chat' },
+  { pattern: /cdn\.cookielaw\.org|onetrust/i, name: 'OneTrust (Cookie Consent)' },
+  { pattern: /cookiebot/i, name: 'Cookiebot' },
+];
+
+// Safe axios config for fetching pages
+const AXIOS_CONFIG = {
+  timeout: 10000,
+  headers: {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate',
+  },
+  maxRedirects: 5,
+  validateStatus: () => true, // never throw on HTTP status codes
+};
+
 @Injectable()
-@Injectable()
-export class ScannerService implements OnModuleInit, OnModuleDestroy {
-    private readonly logger = new Logger(ScannerService.name);
-    private browser: Browser;
+export class ScannerService {
+  private readonly logger = new Logger(ScannerService.name);
 
-    constructor(
-        private aiService: AiService,
-        private prisma: PrismaService
-    ) {
-        puppeteer.use(StealthPlugin());
+  constructor(
+    private aiService: AiService,
+    private prisma: PrismaService,
+  ) {}
+
+  // ─── Stats ───────────────────────────────────────────────
+  async getStats() {
+    try {
+      if (!this.prisma.isDbActive) {
+        return { totalScans: 0, highRiskScans: 0, protectedUsers: 0 };
+      }
+
+      const totalScans = await this.prisma.scan.count();
+      const highRiskScans = await this.prisma.scan.count({
+        where: { riskLevel: { in: ['HIGH', 'CRITICAL'] } },
+      });
+      const uniqueSites = await this.prisma.scan.groupBy({ by: ['url'] });
+
+      return {
+        totalScans,
+        highRiskScans,
+        protectedUsers: uniqueSites.length || 0,
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to fetch stats: ${error.message}`);
+      return { totalScans: 0, highRiskScans: 0, protectedUsers: 0 };
     }
+  }
 
-    async onModuleInit() {
-        this.logger.log('Launching persistent browser instance...');
-        try {
-            this.browser = await puppeteer.launch({
-                headless: true,
-                args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
-            });
-        } catch (e) {
-            this.logger.error('Failed to launch browser instance', e);
-        }
-    }
+  // ─── Main Scan ───────────────────────────────────────────
+  async scan(url: string, config?: { provider: string; apiKey?: string }) {
+    this.logger.log(`Starting scan for: ${url}`);
 
-    async onModuleDestroy() {
-        if (this.browser) {
-            await this.browser.close();
-        }
-    }
-
-    async getStats() {
-        const totalScans = await this.prisma.scan.count();
-        const highRiskScans = await this.prisma.scan.count({
-            where: {
-                riskLevel: {
-                    in: ['HIGH', 'CRITICAL']
-                }
-            }
+    // ── 1. Create DB record (if DB is up) ──
+    let scanRecordId: string | null = null;
+    if (this.prisma.isDbActive) {
+      try {
+        const record = await this.prisma.scan.create({
+          data: {
+            url,
+            status: 'PENDING',
+            aiProvider: config?.provider || 'gemini',
+          },
         });
+        scanRecordId = record.id;
+      } catch (dbErr: any) {
+        this.logger.warn(`DB write failed (non-fatal): ${dbErr.message}`);
+      }
+    }
 
-        // Mocking protected users for now as we don't have user tracking fully live
-        // or we could count unique URLs scanned?
-        const uniqueSites = await this.prisma.scan.groupBy({
-            by: ['url'],
-        });
+    try {
+      // ── 2. Fetch the page via HTTP ──
+      const response = await this.fetchPage(url);
+      const html = response.data as string;
+      const responseHeaders = response.headers;
+      const $ = cheerio.load(html);
 
-        return {
-            totalScans,
-            highRiskScans,
-            protectedUsers: uniqueSites.length || 0
+      // ── 3. Extract cookies from Set-Cookie header ──
+      const cookies = this.extractCookies(responseHeaders);
+
+      // ── 4. Extract all script sources ──
+      const scripts = $('script')
+        .map((_i, el) => $(el).attr('src'))
+        .get()
+        .filter((src): src is string => !!src);
+
+      // ── 5. Detect known trackers ──
+      const detectedTrackers = this.detectTrackers($, scripts);
+
+      // ── 6. Extract page metadata ──
+      const metadata = {
+        title: $('title').text().trim() || 'No title',
+        description: $('meta[name="description"]').attr('content') || '',
+        generator: $('meta[name="generator"]').attr('content') || '',
+      };
+
+      // ── 7. Extract security headers ──
+      const securityHeaders = this.extractSecurityHeaders(responseHeaders);
+
+      // ── 8. Attempt to find and fetch privacy policy ──
+      let privacyPolicyText = '';
+      const policyLink = $('a')
+        .map((_i, el) => ({
+          href: $(el).attr('href'),
+          text: $(el).text().trim(),
+        }))
+        .get()
+        .find(
+          (l) =>
+            l.text.toLowerCase().includes('privacy') ||
+            l.href?.toLowerCase().includes('privacy'),
+        );
+
+      if (policyLink?.href) {
+        privacyPolicyText = await this.fetchPrivacyPolicy(policyLink.href, url);
+      }
+
+      // ── 9. Build scan data payload ──
+      const scanData = {
+        url,
+        cookies,
+        scripts,
+        detectedTrackers,
+        securityHeaders,
+        privacyPolicyText,
+        metadata,
+        httpStatus: response.status,
+      };
+
+      // ── 10. AI Analysis ──
+      let aiAnalysis: any = null;
+      try {
+        aiAnalysis = await this.aiService.analyzePrivacy(scanData, config);
+      } catch (aiErr: any) {
+        this.logger.error(`AI analysis failed: ${aiErr.message}`);
+        aiAnalysis = {
+          score: 0,
+          riskLevel: 'UNKNOWN',
+          analysis: `AI analysis unavailable: ${aiErr.message}`,
+          risks: [],
+          recommendations: ['AI analysis could not be completed. Review scan data manually.'],
         };
-    }
+      }
 
-    async scan(url: string, config?: { provider: string, apiKey?: string }) {
-        this.logger.log(`Starting scan for: ${url}`);
-
-        // Create initial scan record
-        const scanRecord = await this.prisma.scan.create({
+      // ── 11. Update DB record ──
+      if (scanRecordId && this.prisma.isDbActive) {
+        try {
+          await this.prisma.scan.update({
+            where: { id: scanRecordId },
             data: {
-                url,
-                status: 'PENDING',
-                aiProvider: config?.provider || 'gemini'
-            }
+              status: 'COMPLETED',
+              score: aiAnalysis?.score ?? null,
+              riskLevel: aiAnalysis?.riskLevel ?? null,
+              report: JSON.stringify(aiAnalysis),
+              completedAt: new Date(),
+            },
+          });
+        } catch (dbErr: any) {
+          this.logger.warn(`DB update failed (non-fatal): ${dbErr.message}`);
+        }
+      }
+
+      return {
+        status: 'success',
+        data: {
+          ...scanData,
+          aiAnalysis,
+          provider: config?.provider || 'gemini',
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Scan failed for ${url}: ${error.message}`);
+
+      // Mark DB record as failed
+      if (scanRecordId && this.prisma.isDbActive) {
+        try {
+          await this.prisma.scan.update({
+            where: { id: scanRecordId },
+            data: { status: 'FAILED', report: error.message },
+          });
+        } catch (dbErr: any) {
+          this.logger.warn(`DB update (failure) failed: ${dbErr.message}`);
+        }
+      }
+
+      // NEVER throw 500 — return a controlled error response
+      return {
+        status: 'error',
+        message: `Scan failed: ${error.message}`,
+        fallback: true,
+      };
+    }
+  }
+
+  // ─── Private Helpers ─────────────────────────────────────
+
+  private async fetchPage(url: string): Promise<AxiosResponse> {
+    // Check robots.txt first (non-blocking)
+    const isAllowed = await this.checkRobotsTxt(url);
+    if (!isAllowed) {
+      throw new BadRequestException('Scanning is forbidden by robots.txt');
+    }
+
+    const response = await axios.get(url, AXIOS_CONFIG);
+
+    if (response.status >= 400) {
+      this.logger.warn(`Page returned HTTP ${response.status} for ${url}`);
+    }
+
+    return response;
+  }
+
+  private extractCookies(headers: any): Array<{ name: string; value: string; flags: string[] }> {
+    const cookies: Array<{ name: string; value: string; flags: string[] }> = [];
+    try {
+      const setCookieHeader = headers['set-cookie'];
+      if (!setCookieHeader) return cookies;
+
+      const cookieArray = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+
+      for (const raw of cookieArray) {
+        const parts = raw.split(';').map((p: string) => p.trim());
+        const [nameValue, ...flagParts] = parts;
+        const eqIndex = nameValue.indexOf('=');
+        if (eqIndex === -1) continue;
+
+        cookies.push({
+          name: nameValue.substring(0, eqIndex),
+          value: nameValue.substring(eqIndex + 1).substring(0, 50), // truncate values
+          flags: flagParts,
         });
+      }
+    } catch (e: any) {
+      this.logger.warn(`Cookie extraction failed: ${e.message}`);
+    }
+    return cookies;
+  }
 
-        // 1. Check Robots.txt
-        const isAllowed = await this.checkRobotsTxt(url);
-        if (!isAllowed) {
-            await this.prisma.scan.update({
-                where: { id: scanRecord.id },
-                data: { status: 'FAILED', report: 'Blocked by robots.txt' }
-            });
-            throw new BadRequestException('Scanning strictly forbidden by robots.txt');
-        }
+  private detectTrackers($: any, scriptSrcs: string[]): Array<{ name: string; source: string }> {
+    const found: Array<{ name: string; source: string }> = [];
+    const fullHtml = $.html();
 
-        if (!this.browser) {
-            await this.onModuleInit(); // Try to restart if crashed
-        }
+    for (const tracker of TRACKER_PATTERNS) {
+      // Check script src attributes
+      const matchedSrc = scriptSrcs.find((src) => tracker.pattern.test(src));
+      if (matchedSrc) {
+        found.push({ name: tracker.name, source: matchedSrc });
+        continue;
+      }
 
-        let page: Page | undefined;
-        try {
-            page = await this.browser.newPage();
-
-            // Set legitimate-looking but identifiable User Agent
-            await page.setUserAgent('PrivacyCheckBot/1.0 (+http://localhost:5173/bot-info) Mozilla/5.0 Compatible');
-
-            // Navigate to URL
-            const response = await page.goto(url, { waitUntil: 'networkidle2', timeout: 45000 });
-            const content = await page.content();
-            const $ = cheerio.load(content);
-
-            let cookies: any[] = [];
-            try {
-                const client = await page.createCDPSession();
-                const result = await client.send('Network.getAllCookies');
-                cookies = result.cookies;
-            } catch (e) {
-                this.logger.warn(`Failed to extract cookies: ${e.message}`);
-            }
-
-            const scripts = $('script').map((i, el) => $(el).attr('src')).get().filter(src => src);
-
-            const metadata = {
-                title: $('title').text(),
-                description: $('meta[name="description"]').attr('content'),
-                generator: $('meta[name="generator"]').attr('content'),
-            };
-
-            // Extract privacy policy
-            let privacyPolicyText = '';
-            const policyLink = $('a').map((i, el) => ({
-                href: $(el).attr('href'),
-                text: $(el).text().trim(),
-            })).get().find(l =>
-                l.text.toLowerCase().includes('privacy') ||
-                l.href?.toLowerCase().includes('privacy')
-            );
-
-            if (policyLink && policyLink.href) {
-                try {
-                    const policyUrl = new URL(policyLink.href, url).href;
-                    // Use a separate lightweight tab for the policy to avoid polluting main context
-                    const policyPage = await this.browser.newPage();
-                    await policyPage.goto(policyUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
-                    const policyContent = await policyPage.content();
-                    const $policy = cheerio.load(policyContent);
-                    privacyPolicyText = $policy('body').text().replace(/\s+/g, ' ').trim().substring(0, 15000);
-                    await policyPage.close();
-                } catch (e) {
-                    this.logger.warn(`Failed to fetch privacy policy: ${e.message}`);
-                }
-            }
-
-            await page.close();
-
-            const scanData = {
-                url,
-                cookies,
-                scripts,
-                privacyPolicyText,
-                metadata
-            };
-
-            // AI Analysis
-            const aiAnalysis = await this.aiService.analyzePrivacy(scanData, config);
-
-            // Update scan record with results
-            await this.prisma.scan.update({
-                where: { id: scanRecord.id },
-                data: {
-                    status: 'COMPLETED',
-                    score: aiAnalysis.score,
-                    riskLevel: aiAnalysis.riskLevel,
-                    report: JSON.stringify(aiAnalysis), // Save full analysis
-                    completedAt: new Date()
-                }
-            });
-
-            return {
-                ...scanData,
-                aiAnalysis,
-                provider: config?.provider // Echo back provider for verification
-            };
-
-        } catch (error) {
-            this.logger.error(`Scan failed: ${error.message}`);
-            if (page) await page.close().catch(() => { });
-
-            await this.prisma.scan.update({
-                where: { id: scanRecord.id },
-                data: { status: 'FAILED', report: error.message }
-            });
-
-            throw error;
-        }
+      // Check inline scripts and HTML for tracker patterns
+      if (tracker.pattern.test(fullHtml)) {
+        found.push({ name: tracker.name, source: 'inline/embedded' });
+      }
     }
 
-    private async checkRobotsTxt(targetUrl: string): Promise<boolean> {
-        try {
-            const urlObj = new URL(targetUrl);
-            const robotsUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
+    return found;
+  }
 
-            this.logger.log(`Checking robots.txt at ${robotsUrl}`);
-            const { data } = await axios.get(robotsUrl, { timeout: 5000, validateStatus: () => true });
+  private extractSecurityHeaders(headers: any): Record<string, string | null> {
+    const securityHeaderNames = [
+      'strict-transport-security',
+      'content-security-policy',
+      'x-content-type-options',
+      'x-frame-options',
+      'x-xss-protection',
+      'referrer-policy',
+      'permissions-policy',
+      'cross-origin-opener-policy',
+      'cross-origin-resource-policy',
+    ];
 
-            if (typeof data !== 'string') return true; // No valid robots.txt found, assume allowed
-
-            const robots = robotsParser(robotsUrl, data);
-            return robots.isAllowed(targetUrl, 'PrivacyCheckBot/1.0') ?? true;
-        } catch (e) {
-            this.logger.warn(`Could not check robots.txt: ${e.message}. Proceeding with caution.`);
-            return true; // Fail open but log warning
-        }
+    const result: Record<string, string | null> = {};
+    for (const name of securityHeaderNames) {
+      result[name] = headers[name] || null;
     }
+    return result;
+  }
+
+  private async fetchPrivacyPolicy(href: string, baseUrl: string): Promise<string> {
+    try {
+      const policyUrl = new URL(href, baseUrl).href;
+      this.logger.log(`Fetching privacy policy from: ${policyUrl}`);
+
+      const response = await axios.get(policyUrl, {
+        ...AXIOS_CONFIG,
+        timeout: 8000,
+      });
+
+      if (response.status >= 400 || typeof response.data !== 'string') {
+        return '';
+      }
+
+      const $policy = cheerio.load(response.data);
+      return $policy('body')
+        .text()
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 15000);
+    } catch (e: any) {
+      this.logger.warn(`Failed to fetch privacy policy: ${e.message}`);
+      return '';
+    }
+  }
+
+  private async checkRobotsTxt(targetUrl: string): Promise<boolean> {
+    try {
+      const urlObj = new URL(targetUrl);
+      const robotsUrl = `${urlObj.protocol}//${urlObj.host}/robots.txt`;
+
+      const { data } = await axios.get(robotsUrl, {
+        timeout: 5000,
+        validateStatus: () => true,
+      });
+
+      if (typeof data !== 'string') return true;
+
+      // Simple robots.txt check — look for Disallow: /
+      const lines = data.split('\n');
+      let inOurBlock = false;
+      for (const line of lines) {
+        const trimmed = line.trim().toLowerCase();
+        if (trimmed.startsWith('user-agent:')) {
+          const agent = trimmed.replace('user-agent:', '').trim();
+          inOurBlock = agent === '*' || agent.includes('privacycheck');
+        }
+        if (inOurBlock && trimmed === 'disallow: /') {
+          return false; // Entire site disallowed
+        }
+      }
+      return true;
+    } catch (e: any) {
+      this.logger.warn(`Could not check robots.txt: ${e.message}. Proceeding.`);
+      return true; // Fail open
+    }
+  }
 }

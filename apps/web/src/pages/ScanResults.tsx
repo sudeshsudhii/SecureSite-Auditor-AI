@@ -1,5 +1,5 @@
 import { useLocation, Link } from 'react-router-dom';
-import { ShieldCheck, ShieldAlert, FileText, ChevronLeft, Lock } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, FileText, ChevronLeft, Lock, Radar, ShieldOff } from 'lucide-react';
 
 const ScanResults = () => {
     const location = useLocation();
@@ -14,9 +14,8 @@ const ScanResults = () => {
         );
     }
 
-    const { url, cookies, scripts, aiAnalysis } = data;
+    const { url, cookies, scripts, detectedTrackers, securityHeaders, aiAnalysis } = data;
     const score = aiAnalysis?.score || 0;
-
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -70,37 +69,101 @@ const ScanResults = () => {
                                 <p className="text-gray-500 italic">No specific risks detected.</p>
                             )}
                         </section>
+
+                        {/* Recommendations */}
+                        {aiAnalysis?.recommendations?.length > 0 && (
+                            <section>
+                                <h3 className="text-lg font-semibold mb-3">Recommendations</h3>
+                                <ul className="space-y-2">
+                                    {aiAnalysis.recommendations.map((rec: string, idx: number) => (
+                                        <li key={idx} className="flex items-start p-3 bg-blue-50 dark:bg-blue-900/10 rounded-lg text-blue-700 dark:text-blue-400 text-sm">
+                                            <span className="mr-2">💡</span>
+                                            {rec}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </section>
+                        )}
                     </div>
 
                     {/* Technical Details */}
                     <div className="space-y-6">
+                        {/* Detected Trackers */}
+                        {detectedTrackers && detectedTrackers.length > 0 && (
+                            <section>
+                                <h3 className="text-lg font-semibold mb-3 flex items-center">
+                                    <Radar className="w-5 h-5 mr-2 text-red-500" />
+                                    Trackers Detected ({detectedTrackers.length})
+                                </h3>
+                                <div className="bg-red-50 dark:bg-red-900/10 p-4 rounded-lg space-y-2">
+                                    {detectedTrackers.map((t: any, i: number) => (
+                                        <div key={i} className="flex justify-between items-center text-sm">
+                                            <span className="font-medium text-red-700 dark:text-red-400">{t.name}</span>
+                                            <span className="text-gray-400 text-xs truncate max-w-[200px]">{t.source}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* Security Headers */}
+                        {securityHeaders && (
+                            <section>
+                                <h3 className="text-lg font-semibold mb-3 flex items-center">
+                                    <ShieldOff className="w-5 h-5 mr-2 text-orange-500" />
+                                    Security Headers
+                                </h3>
+                                <div className="bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <table className="w-full text-sm text-left">
+                                        <tbody>
+                                            {Object.entries(securityHeaders).map(([header, value]: [string, any]) => (
+                                                <tr key={header} className="border-t border-gray-200 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium text-xs text-gray-600 dark:text-gray-300 whitespace-nowrap">{header}</td>
+                                                    <td className="px-4 py-2">
+                                                        {value
+                                                            ? <span className="text-green-600 text-xs">✅ Set</span>
+                                                            : <span className="text-red-500 text-xs">❌ Missing</span>
+                                                        }
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        )}
+
+                        {/* Cookies */}
                         <section>
                             <h3 className="text-lg font-semibold mb-3 flex items-center">
                                 <Lock className="w-5 h-5 mr-2 text-purple-500" />
                                 Cookies Found ({cookies?.length || 0})
                             </h3>
-                            <div className="max-h-60 overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
-                                <table className="w-full text-sm text-left">
-                                    <thead className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
-                                        <tr>
-                                            <th className="px-4 py-2">Name</th>
-                                            <th className="px-4 py-2">Domain</th>
-                                            <th className="px-4 py-2">Secure</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {cookies?.map((c: any, i: number) => (
-                                            <tr key={i} className="border-t border-gray-200 dark:border-gray-700">
-                                                <td className="px-4 py-2 font-medium truncate max-w-[120px]">{c.name}</td>
-                                                <td className="px-4 py-2 text-gray-500 truncate max-w-[150px]">{c.domain}</td>
-                                                <td className="px-4 py-2">{c.secure ? '✅' : '❌'}</td>
+                            {cookies?.length > 0 ? (
+                                <div className="max-h-60 overflow-y-auto bg-gray-50 dark:bg-gray-900 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400">
+                                            <tr>
+                                                <th className="px-4 py-2">Name</th>
+                                                <th className="px-4 py-2">Flags</th>
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                                        </thead>
+                                        <tbody>
+                                            {cookies?.map((c: any, i: number) => (
+                                                <tr key={i} className="border-t border-gray-200 dark:border-gray-700">
+                                                    <td className="px-4 py-2 font-medium truncate max-w-[150px]">{c.name}</td>
+                                                    <td className="px-4 py-2 text-gray-500 text-xs truncate max-w-[200px]">{c.flags?.join('; ') || '—'}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <p className="text-gray-500 italic text-sm">No cookies detected in HTTP response.</p>
+                            )}
                         </section>
 
+                        {/* External Scripts */}
                         <section>
                             <h3 className="text-lg font-semibold mb-3 flex items-center">
                                 <FileText className="w-5 h-5 mr-2 text-amber-500" />

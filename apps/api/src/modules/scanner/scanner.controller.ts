@@ -1,33 +1,27 @@
-import { Controller, Post, Body, UseGuards, BadRequestException, Headers, Get } from '@nestjs/common';
+import { Controller, Post, Body, Headers, Get, Logger } from '@nestjs/common';
 import { ScannerService } from './scanner.service';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { IsUrl, IsNotEmpty } from 'class-validator';
-
-class ScanUrlDto {
-    @IsUrl()
-    @IsNotEmpty()
-    url: string;
-}
+import { ScanUrlDto } from './scan.dto';
 
 @Controller('scan')
 export class ScannerController {
-    constructor(private readonly scannerService: ScannerService) { }
+  private readonly logger = new Logger(ScannerController.name);
 
-    @Get('stats')
-    async getStats() {
-        return this.scannerService.getStats();
-    }
+  constructor(private readonly scannerService: ScannerService) {}
 
-    // @UseGuards(JwtAuthGuard) // Disabled for testing ease, enable in production
-    @Post()
-    async scan(@Body() dto: ScanUrlDto, @Headers() headers: any) {
-        if (!dto.url) {
-            throw new BadRequestException('URL is required');
-        }
-        const config = {
-            provider: headers['x-ai-provider'] || 'gemini',
-            apiKey: headers['x-api-key']
-        };
-        return this.scannerService.scan(dto.url, config);
-    }
+  @Get('stats')
+  async getStats() {
+    return this.scannerService.getStats();
+  }
+
+  @Post()
+  async scan(@Body() dto: ScanUrlDto, @Headers() headers: any) {
+    this.logger.log(`Scan request received for URL: ${dto.url}`);
+
+    const config = {
+      provider: headers['x-ai-provider'] || 'gemini',
+      apiKey: headers['x-api-key'],
+    };
+
+    return this.scannerService.scan(dto.url, config);
+  }
 }
