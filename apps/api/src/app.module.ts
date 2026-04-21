@@ -8,11 +8,14 @@ import { UsersModule } from './modules/users/users.module';
 import { ScannerModule } from './modules/scanner/scanner.module';
 import { AiModule } from './modules/ai/ai.module';
 
+import { validate } from './env.validation';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env', '../../.env'], // Look in api root and monorepo root
+      validate,
     }),
     PrismaModule,
     AuthModule,
