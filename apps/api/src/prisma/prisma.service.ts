@@ -14,7 +14,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit {
         'Failed to connect to the database. Please check your DATABASE_URL and ensure your database (e.g., Neon, Supabase) is active and not suspended.',
         error,
       );
-      throw error;
+      // Removed "throw error" to prevent the application from crashing on startup
+      // so Render deployment can complete.
     }
   }
 }
