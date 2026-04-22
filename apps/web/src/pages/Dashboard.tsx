@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Globe, ShieldAlert, CheckCircle } from 'lucide-react';
+import React, { useState, useRef, useCallback } from 'react';
+import { Globe, ShieldAlert, CheckCircle, AlertTriangle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 
@@ -7,8 +7,14 @@ const Dashboard = () => {
     const [url, setUrl] = useState('');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [errorType, setErrorType] = useState<'quota' | 'generic' | null>(null);
     const [stats, setStats] = useState({ totalScans: 0, highRiskScans: 0, protectedUsers: 0 });
     const navigate = useNavigate();
+
+    // Debounce ref to prevent rapid re-submissions
+    const lastScanTime = useRef<number>(0);
+    // Cooldown ref for post-error throttle
+    const cooldownUntil = useRef<number>(0);
 
     React.useEffect(() => {
         const fetchStats = async () => {
@@ -22,12 +28,41 @@ const Dashboard = () => {
         fetchStats();
     }, []);
 
+    /**
+     * Checks if a scan request should be throttled.
+     * Prevents double-clicks and rapid re-submissions.
+     */
+    const isThrottled = useCallback((): boolean => {
+        const now = Date.now();
+
+        // Check post-error cooldown (3s after a failed request)
+        if (now < cooldownUntil.current) {
+            const remaining = Math.ceil((cooldownUntil.current - now) / 1000);
+            setError(`Please wait ${remaining}s before scanning again.`);
+            return true;
+        }
+
+        // Debounce: minimum 2s between scan requests
+        if (now - lastScanTime.current < 2000) {
+            setError('Please wait a moment before scanning again.');
+            return true;
+        }
+
+        return false;
+    }, []);
+
     const handleScan = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!url) return;
 
+        // Prevent rapid re-submissions
+        if (isThrottled()) return;
+
         setLoading(true);
         setError(null);
+        setErrorType(null);
+        lastScanTime.current = Date.now();
+
         try {
             const response = await api.post('/scan', { url });
             const result = response.data;
@@ -35,6 +70,9 @@ const Dashboard = () => {
             // Handle controlled error response (API returns 200 with status: 'error')
             if (result.status === 'error') {
                 setError(result.message || 'Scan failed. Please try again.');
+                setErrorType('generic');
+                // 3s cooldown after error to prevent hammering
+                cooldownUntil.current = Date.now() + 3000;
                 return;
             }
 
@@ -42,10 +80,25 @@ const Dashboard = () => {
             navigate('/scan/result', { state: { data: result.data || result } });
         } catch (err: any) {
             console.error(err);
-            if (err.response?.data?.message) {
+
+            // Detect quota / rate-limit errors specifically
+            const is429 = err.response?.status === 429 ||
+                err.response?.data?.message?.toLowerCase?.()?.includes('quota') ||
+                err.response?.data?.message?.toLowerCase?.()?.includes('rate limit');
+
+            if (is429) {
+                setError('API quota exceeded. Please wait a few minutes or configure a different API key in Settings.');
+                setErrorType('quota');
+                // Longer cooldown for quota errors
+                cooldownUntil.current = Date.now() + 10000;
+            } else if (err.response?.data?.message) {
                 setError(Array.isArray(err.response.data.message) ? err.response.data.message.join(', ') : err.response.data.message);
+                setErrorType('generic');
+                cooldownUntil.current = Date.now() + 3000;
             } else {
                 setError('Backend unavailable. Please try again later.');
+                setErrorType('generic');
+                cooldownUntil.current = Date.now() + 3000;
             }
         } finally {
             setLoading(false);
@@ -78,7 +131,17 @@ const Dashboard = () => {
                             {loading ? 'Scanning...' : 'Scan Now'}
                         </button>
                     </div>
-                    {error && <p className="text-red-500 mt-4 text-sm">{error}</p>}
+                    {/* Error display with distinct styling for quota errors */}
+                    {error && (
+                        <div className={`mt-4 flex items-start gap-2 text-sm p-3 rounded-lg ${
+                            errorType === 'quota'
+                                ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-700'
+                                : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-700'
+                        }`}>
+                            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                            <span className="break-words overflow-wrap-anywhere">{error}</span>
+                        </div>
+                    )}
                 </form>
             </section>
 

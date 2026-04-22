@@ -153,18 +153,31 @@ export class ScannerService {
         httpStatus: response.status,
       };
 
-      // ── 10. AI Analysis ──
+      // ── 10. AI Analysis (with fallback) ──
       let aiAnalysis: any = null;
       try {
         aiAnalysis = await this.aiService.analyzePrivacy(scanData, config);
+
+        // If AI returned a rate-limited / unavailable response, enrich it with rule-based analysis
+        if (aiAnalysis?.riskLevel === 'UNAVAILABLE' || aiAnalysis?._rateLimited || aiAnalysis?._quotaExceeded) {
+          this.logger.warn('AI quota exhausted — enriching with rule-based fallback analysis');
+          const fallback = this.generateFallbackAnalysis(scanData);
+          aiAnalysis = {
+            ...aiAnalysis,
+            score: fallback.score,
+            risks: fallback.risks,
+            recommendations: [...(aiAnalysis.recommendations || []), ...fallback.recommendations],
+            _fallback: true,
+          };
+        }
       } catch (aiErr: any) {
         this.logger.error(`AI analysis failed: ${aiErr.message}`);
+        // Generate a basic rule-based analysis so the user always gets some result
+        const fallback = this.generateFallbackAnalysis(scanData);
         aiAnalysis = {
-          score: 0,
-          riskLevel: 'UNKNOWN',
-          analysis: `AI analysis unavailable: ${aiErr.message}`,
-          risks: [],
-          recommendations: ['AI analysis could not be completed. Review scan data manually.'],
+          ...fallback,
+          analysis: `AI analysis unavailable (${aiErr.message}). Showing rule-based analysis from scan data.`,
+          _fallback: true,
         };
       }
 
@@ -360,4 +373,90 @@ export class ScannerService {
       return true; // Fail open
     }
   }
+
+  /**
+   * Generates a basic rule-based privacy analysis from scan data.
+   * Used as a fallback when the AI provider is unavailable (quota exceeded, errors).
+   * Scores are heuristic-based and conservative.
+   */
+  private generateFallbackAnalysis(scanData: any): {
+    score: number;
+    riskLevel: string;
+    analysis: string;
+    risks: Array<{ category: string; description: string; severity: string }>;
+    recommendations: string[];
+  } {
+    let score = 100;
+    const risks: Array<{ category: string; description: string; severity: string }> = [];
+    const recommendations: string[] = [];
+
+    // --- Tracker penalty ---
+    const trackerCount = scanData.detectedTrackers?.length || 0;
+    if (trackerCount > 0) {
+      const penalty = Math.min(trackerCount * 8, 40); // up to -40
+      score -= penalty;
+      risks.push({
+        category: 'Tracking',
+        description: `${trackerCount} known tracker(s) detected on this page.`,
+        severity: trackerCount >= 5 ? 'HIGH' : trackerCount >= 2 ? 'MEDIUM' : 'LOW',
+      });
+      recommendations.push(`Review and minimize the ${trackerCount} tracking script(s) found.`);
+    }
+
+    // --- Cookie penalty ---
+    const cookieCount = scanData.cookies?.length || 0;
+    if (cookieCount > 5) {
+      score -= Math.min((cookieCount - 5) * 3, 20);
+      risks.push({
+        category: 'Cookies',
+        description: `${cookieCount} cookies set — users should be informed and given control.`,
+        severity: cookieCount > 15 ? 'HIGH' : 'MEDIUM',
+      });
+      recommendations.push('Implement a cookie consent banner compliant with GDPR/CCPA.');
+    }
+
+    // --- Missing security headers ---
+    const headers = scanData.securityHeaders || {};
+    const missingHeaders = Object.entries(headers)
+      .filter(([, val]) => !val)
+      .map(([name]) => name);
+    if (missingHeaders.length > 0) {
+      score -= Math.min(missingHeaders.length * 5, 25);
+      risks.push({
+        category: 'Security Headers',
+        description: `${missingHeaders.length} security header(s) missing: ${missingHeaders.slice(0, 3).join(', ')}${missingHeaders.length > 3 ? '...' : ''}.`,
+        severity: missingHeaders.length >= 5 ? 'HIGH' : 'MEDIUM',
+      });
+      recommendations.push(`Add missing security headers (${missingHeaders.slice(0, 3).join(', ')}).`);
+    }
+
+    // --- No privacy policy ---
+    if (!scanData.privacyPolicyText) {
+      score -= 15;
+      risks.push({
+        category: 'Privacy Policy',
+        description: 'No privacy policy link was detected on the page.',
+        severity: 'HIGH',
+      });
+      recommendations.push('Add a clearly visible privacy policy link accessible from every page.');
+    }
+
+    // Clamp score
+    score = Math.max(0, Math.min(100, score));
+
+    // Determine risk level
+    let riskLevel = 'LOW';
+    if (score < 30) riskLevel = 'CRITICAL';
+    else if (score < 50) riskLevel = 'HIGH';
+    else if (score < 70) riskLevel = 'MEDIUM';
+
+    return {
+      score,
+      riskLevel,
+      analysis: `Rule-based analysis: Privacy score is ${score}/100 based on ${trackerCount} tracker(s), ${cookieCount} cookie(s), and ${missingHeaders.length} missing security header(s).`,
+      risks,
+      recommendations,
+    };
+  }
 }
+
