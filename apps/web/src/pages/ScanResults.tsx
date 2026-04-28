@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
-import { ShieldCheck, ShieldAlert, FileText, ChevronLeft, Lock, Radar, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Code } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, FileText, ChevronLeft, Lock, Radar, ShieldOff, AlertTriangle, ChevronDown, ChevronUp, Code, Cpu } from 'lucide-react';
 
 const ScanResults = () => {
     const location = useLocation();
@@ -21,10 +21,20 @@ const ScanResults = () => {
     const { url, cookies, scripts, detectedTrackers, securityHeaders, aiAnalysis } = data;
     const score = aiAnalysis?.score || 0;
 
-    // Detect if the AI result is a fallback / quota-exceeded response
+    // Detect AI provider and fallback state
+    const aiProvider: string = aiAnalysis?._provider || 'gemini';
+    const isRuleBased = aiProvider === 'rule-based';
     const isQuotaExceeded = aiAnalysis?._quotaExceeded || aiAnalysis?._rateLimited;
-    const isFallback = aiAnalysis?._fallback;
+    const isFallback = aiAnalysis?._fallback || isRuleBased;
     const isUnavailable = aiAnalysis?.riskLevel === 'UNAVAILABLE' || aiAnalysis?.riskLevel === 'ERROR';
+
+    const providerLabel: Record<string, { name: string; color: string }> = {
+        gemini: { name: 'Google Gemini', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+        openai: { name: 'OpenAI GPT-4o-mini', color: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+        claude: { name: 'Anthropic Claude', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+        'rule-based': { name: 'Rule-Based Engine', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' },
+    };
+    const providerInfo = providerLabel[aiProvider] || providerLabel['gemini'];
 
     return (
         <div className="space-y-6 animate-fade-in">
@@ -33,22 +43,32 @@ const ScanResults = () => {
             </Link>
 
             {/* Quota / Fallback Warning Banner */}
+            {/* AI Provider Badge — always shown */}
+            {aiAnalysis && !isUnavailable && (
+                <div className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${providerInfo.color}`}>
+                    <Cpu className="w-3.5 h-3.5" />
+                    Analyzed by {providerInfo.name}
+                    {aiAnalysis?._cached && <span className="ml-1 opacity-70">(cached)</span>}
+                </div>
+            )}
+
+            {/* Fallback / quota warning banner */}
             {(isQuotaExceeded || isFallback || isUnavailable) && (
                 <div className="flex items-start gap-3 p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-xl text-amber-800 dark:text-amber-300">
                     <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
                     <div className="min-w-0 break-words">
                         <p className="font-semibold text-sm">
-                            {isQuotaExceeded
-                                ? 'AI Quota Exceeded'
-                                : isFallback
-                                    ? 'AI Unavailable — Rule-Based Analysis'
+                            {isRuleBased
+                                ? 'Using Backup Engine — Rule-Based Analysis'
+                                : isQuotaExceeded
+                                    ? 'AI Quota Exceeded — Using Backup Engine'
                                     : 'AI Analysis Error'}
                         </p>
                         <p className="text-sm mt-1 break-words overflow-wrap-anywhere">
-                            {isQuotaExceeded
-                                ? 'The Gemini API quota has been exceeded. Showing a rule-based analysis from scan data. Try again in a few minutes or use a different API key in Settings.'
-                                : isFallback
-                                    ? 'AI analysis could not be completed. The scores below are generated from scan data using built-in rules.'
+                            {isRuleBased
+                                ? 'All AI providers were temporarily unavailable. Scores are generated from raw scan data (cookies, scripts, trackers) using built-in rules. Re-run the scan shortly for full AI analysis.'
+                                : isQuotaExceeded
+                                    ? 'API quota was exceeded. The system automatically tried backup providers. Try again in a few minutes or configure additional API keys in Settings.'
                                     : 'An error occurred during AI analysis. Raw scan data is still available below.'}
                         </p>
                     </div>
@@ -79,10 +99,6 @@ const ScanResults = () => {
                             <h3 className="text-lg font-semibold mb-3 flex items-center">
                                 <ShieldAlert className="w-5 h-5 mr-2 text-blue-500" />
                                 AI Analysis
-                                {/* Show cached badge if result came from cache */}
-                                {aiAnalysis?._cached && (
-                                    <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full">cached</span>
-                                )}
                             </h3>
                             {/* Scrollable container with word wrapping for long AI text */}
                             <div className="bg-gray-50 dark:bg-gray-900 p-5 rounded-lg text-gray-700 dark:text-gray-300 leading-relaxed max-h-96 overflow-y-auto break-words overflow-wrap-anywhere scrollbar-thin">
