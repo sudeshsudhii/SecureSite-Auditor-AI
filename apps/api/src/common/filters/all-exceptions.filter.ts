@@ -11,6 +11,7 @@ import { Request, Response } from 'express';
 // Prisma error codes we want to handle gracefully
 const PRISMA_UNIQUE_VIOLATION = 'P2002'; // Unique constraint
 const PRISMA_NOT_FOUND = 'P2025';        // Record not found
+const PRISMA_TABLE_MISSING = 'P2021';    // Table does not exist
 const PRISMA_CONN_FAILED = ['P1001', 'P1002', 'P1008', 'P1017']; // DB unreachable
 
 @Catch()
@@ -44,6 +45,9 @@ export class AllExceptionsFilter implements ExceptionFilter {
       } else if (code === PRISMA_NOT_FOUND) {
         status = HttpStatus.NOT_FOUND;
         message = 'Record not found.';
+      } else if (code === PRISMA_TABLE_MISSING) {
+        status = HttpStatus.SERVICE_UNAVAILABLE;
+        message = 'Database migrations missing (Table not found). Please redeploy the backend.';
       } else if (PRISMA_CONN_FAILED.includes(code)) {
         status = HttpStatus.SERVICE_UNAVAILABLE;
         message = 'Database is temporarily unavailable. Please try again shortly.';
