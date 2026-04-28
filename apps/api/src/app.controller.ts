@@ -18,8 +18,14 @@ export class AppController {
   }
 
   @Get('health')
-  getHealth() {
+  async getHealth() {
     const memUsage = process.memoryUsage();
+    
+    try {
+      await this.prisma.$queryRaw`SELECT 1`;
+    } catch (e) {
+      // DB connection failed
+    }
 
     return {
       status: 'ok',

@@ -38,23 +38,23 @@ export class AuthService {
     }
 
     async register(dto: CreateUserDto) {
-        // Check for duplicate email
-        const existing = await this.usersService.findOne(dto.email);
-        if (existing) {
-            throw new ConflictException(
-                'An account with this email already exists. Please sign in or use a different email.',
-            );
+        const hashedPassword = await bcrypt.hash(dto.password, 10); // cost factor 10 for serverless
+
+        try {
+            const user = await this.usersService.create({
+                email: dto.email,
+                password: hashedPassword,
+                name: dto.name,
+            });
+
+            // Never return the hashed password
+            const { password, ...result } = user;
+            return result;
+        } catch (err: any) {
+            if (err.code === 'P2002') {
+                throw new ConflictException('Email already exists');
+            }
+            throw err;
         }
-
-        const hashedPassword = await bcrypt.hash(dto.password, 12); // cost factor 12
-        const user = await this.usersService.create({
-            email: dto.email,
-            password: hashedPassword,
-            name: dto.name,
-        });
-
-        // Never return the hashed password
-        const { password, ...result } = user;
-        return result;
     }
 }

@@ -2,9 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
+import { verifyDatabase } from './config/db-check';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
+  
+  await verifyDatabase();
+  
   const app = await NestFactory.create(AppModule);
 
   // ── CORS ──────────────────────────────────────────────────
