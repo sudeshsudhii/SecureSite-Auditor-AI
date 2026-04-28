@@ -5,7 +5,9 @@ const prisma = new PrismaClient();
 export async function verifyDatabase() {
   try {
     await prisma.$connect();
-    console.log('Database connected');
+    // Deep check to ensure migrations have actually run
+    await prisma.user.count();
+    console.log('Database connected and tables verified');
   } catch (err) {
     console.error('Database connection failed:', err);
     process.exit(1);

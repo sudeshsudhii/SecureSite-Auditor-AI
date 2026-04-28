@@ -58,7 +58,7 @@ The application follows a **Microservices-inspired Monorepo** architecture, sepa
 | :--- | :--- | :--- |
 | **Frontend** | React 18, TypeScript, Tailwind CSS v4, Vite | High-performance, responsive UI with modern styling. |
 | **Backend** | Node.js, NestJS | Scalable, modular server-side framework. |
-| **Database** | SQLite, Prisma ORM | Lightweight, relational database with type-safe queries. |
+| **Database** | PostgreSQL, Prisma ORM | Relational database with type-safe queries. |
 | **Scanning** | Puppeteer, Cheerio | Headless browser automation and DOM parsing. |
 | **AI / NLP** | Google Gemini SDK, OpenAI SDK | Intelligent text analysis and risk reasoning. |
 | **DevOps** | Docker, Docker Compose | Containerization for consistent deployment. |
@@ -88,8 +88,8 @@ npm install
 Create a `.env` file in the root directory (or update existing one) with the following keys:
 
 ```env
-# Database
-DATABASE_URL="file:./dev.db"
+# Database (PostgreSQL is required for production)
+DATABASE_URL="postgresql://user:password@host:port/database"
 
 # AI Providers (At least one is required)
 GEMINI_API_KEY="your_gemini_key_here"
@@ -100,10 +100,10 @@ JWT_SECRET="super-secret-key"
 ```
 
 ### 4. Database Migration
-Initialize the SQLite database schema:
+Initialize the PostgreSQL database schema:
 ```bash
 npx prisma generate
-npx prisma migrate dev --name init
+npx prisma migrate deploy
 ```
 
 ### 5. Running the Application
@@ -116,6 +116,11 @@ npm run api:dev
 # Start Frontend (Web) - Port 5173
 npm run web:dev
 ```
+
+**Production Deployment:**
+Ensure your hosting provider (Render/Railway/Fly) uses the following commands:
+- **Build Command:** `npm run build:prod` (Installs, generates Prisma, runs migrations, and builds)
+- **Start Command:** `npm run start:prod` (Ensures migrations are deployed before starting)
 
 Access the dashboard at `http://localhost:5173`.
 
