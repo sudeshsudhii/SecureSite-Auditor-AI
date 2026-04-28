@@ -9,7 +9,7 @@ export async function verifyDatabase() {
     await prisma.user.count();
     console.log('Database connected and tables verified');
   } catch (err) {
-    console.error('Database connection failed:', err);
+    console.error('Startup failed: Database not ready or migrations missing', err);
     process.exit(1);
   }
 }

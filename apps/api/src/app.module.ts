@@ -1,5 +1,6 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { CacheModule } from '@nestjs/cache-manager';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
@@ -24,6 +25,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     // Global rate limit: 20 requests per minute
     // Auth routes override this with 5/min via @Throttle()
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 20 }]),
+    // Global in-memory cache: 15 minutes TTL, max 100 items
+    CacheModule.register({ isGlobal: true, ttl: 900000, max: 100 }),
     PrismaModule,
     AuthModule,
     UsersModule,

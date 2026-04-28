@@ -1,4 +1,6 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Inject } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import * as cheerio from 'cheerio';
 import axios, { AxiosResponse } from 'axios';
 import { AiService } from '../ai/ai.service';
@@ -45,6 +47,7 @@ export class ScannerService {
   private readonly logger = new Logger(ScannerService.name);
 
   constructor(
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private aiService: AiService,
     private prisma: PrismaService,
   ) {}
@@ -76,6 +79,14 @@ export class ScannerService {
   // ─── Main Scan ───────────────────────────────────────────
   async scan(url: string, config?: { provider: string; apiKey?: string }) {
     this.logger.log(`Starting scan for: ${url}`);
+
+    // Check Cache first
+    const cacheKey = `scan:${url}:${config?.provider || 'gemini'}`;
+    const cachedResult = await this.cacheManager.get(cacheKey);
+    if (cachedResult) {
+      this.logger.log(`Returning cached scan for: ${url}`);
+      return cachedResult;
+    }
 
     // ── 1. Create DB record (if DB is up) ──
     let scanRecordId: string | null = null;
@@ -208,7 +219,7 @@ export class ScannerService {
         }
       }
 
-      return {
+      const finalResult = {
         status: 'success',
         data: {
           ...scanData,
@@ -216,6 +227,11 @@ export class ScannerService {
           provider: config?.provider || 'gemini',
         },
       };
+
+      // Save to cache (15 min TTL)
+      await this.cacheManager.set(cacheKey, finalResult, 900000);
+
+      return finalResult;
     } catch (error: any) {
       this.logger.error(`Scan failed for ${url}: ${error.message}`);
 
