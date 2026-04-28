@@ -46,11 +46,21 @@ const AXIOS_CONFIG = {
 export class ScannerService {
   private readonly logger = new Logger(ScannerService.name);
 
+  private activeScans = new Map<string, Promise<any>>();
+
   constructor(
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
     private aiService: AiService,
     private prisma: PrismaService,
   ) {}
+
+  private normalizeUrl(url: string) {
+    try {
+      return new URL(url).hostname.replace(/^www\./, '');
+    } catch {
+      return url;
+    }
+  }
 
   // ─── Stats ───────────────────────────────────────────────
   async getStats() {
@@ -78,17 +88,29 @@ export class ScannerService {
 
   // ─── Main Scan ───────────────────────────────────────────
   async scan(url: string, config?: { provider: string; apiKey?: string }) {
-    this.logger.log(`Starting scan for: ${url}`);
+    this.logger.log(`Starting scan request for: ${url}`);
+
+    const normalizedDomain = this.normalizeUrl(url);
+    // Use normalized domain + provider for cache key (could add config.apiKey later if needed)
+    const cacheKey = `scan:${normalizedDomain}:${config?.provider || 'gemini'}`;
 
     // Check Cache first
-    const cacheKey = `scan:${url}:${config?.provider || 'gemini'}`;
     const cachedResult = await this.cacheManager.get(cacheKey);
     if (cachedResult) {
-      this.logger.log(`Returning cached scan for: ${url}`);
+      this.logger.log(`CACHE HIT: ${cacheKey}`);
       return cachedResult;
     }
 
-    // ── 1. Create DB record (if DB is up) ──
+    this.logger.log(`CACHE MISS: ${cacheKey}`);
+
+    // Prevent Cache Stampede
+    if (this.activeScans.has(cacheKey)) {
+      this.logger.log(`Waiting for existing scan in progress: ${cacheKey}`);
+      return this.activeScans.get(cacheKey);
+    }
+
+    const scanPromise = (async () => {
+      // ── 1. Create DB record (if DB is up) ──
     let scanRecordId: string | null = null;
     if (this.prisma.isDbActive) {
       try {
@@ -228,8 +250,12 @@ export class ScannerService {
         },
       };
 
-      // Save to cache (15 min TTL)
-      await this.cacheManager.set(cacheKey, finalResult, 900000);
+      // Save to cache (15 min TTL) ONLY if the scan actually succeeded (no AI error fallback)
+      if (!aiAnalysis?._fallback) {
+        await this.cacheManager.set(cacheKey, finalResult, 900000);
+      } else {
+        this.logger.warn(`Not caching ${cacheKey} due to fallback AI analysis`);
+      }
 
       return finalResult;
     } catch (error: any) {
@@ -253,6 +279,15 @@ export class ScannerService {
         message: `Scan failed: ${error.message}`,
         fallback: true,
       };
+    }
+    })();
+
+    this.activeScans.set(cacheKey, scanPromise);
+
+    try {
+      return await scanPromise;
+    } finally {
+      this.activeScans.delete(cacheKey);
     }
   }
 

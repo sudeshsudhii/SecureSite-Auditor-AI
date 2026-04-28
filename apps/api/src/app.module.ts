@@ -25,8 +25,8 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
     // Global rate limit: 20 requests per minute
     // Auth routes override this with 5/min via @Throttle()
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 20 }]),
-    // Global in-memory cache: 15 minutes TTL, max 100 items
-    CacheModule.register({ isGlobal: true, ttl: 900000, max: 100 }),
+    // Global in-memory cache: 15 minutes TTL, max 500 items
+    CacheModule.register({ isGlobal: true, ttl: 900000, max: 500 }),
     PrismaModule,
     AuthModule,
     UsersModule,
