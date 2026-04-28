@@ -76,7 +76,8 @@ api.interceptors.response.use(
             } else if (typeof raw === 'string') {
                 error.response.data.message = raw;
             } else {
-                error.response.data.message = 'Something went wrong. Please try again.';
+                // Final fallback — prevents [object Object] being shown to users
+                error.response.data.message = 'Unexpected error occurred. Please try again.';
             }
         }
 

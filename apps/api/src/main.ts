@@ -11,6 +11,10 @@ async function bootstrap() {
   
   const app = await NestFactory.create(AppModule);
 
+  // Trust proxy headers (critical for correct IP detection behind Vercel/Render/Railway)
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.set('trust proxy', 1);
+  
   // ── CORS ──────────────────────────────────────────────────
   const frontendUrl = process.env.FRONTEND_URL || '';
   const allowedOrigins: string[] = [

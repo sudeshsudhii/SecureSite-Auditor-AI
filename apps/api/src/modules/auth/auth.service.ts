@@ -55,13 +55,16 @@ export class AuthService {
         // Strip confirmPassword — never store it
         const { confirmPassword: _, ...userData } = dto;
 
+        // Normalize email: lowercase + trim to prevent duplicate accounts
+        const normalizedEmail = userData.email.toLowerCase().trim();
+
         const hashedPassword = await bcrypt.hash(userData.password, 10); // cost factor 10 for serverless
 
         try {
             const user = await this.usersService.create({
-                email: userData.email,
+                email: normalizedEmail,
                 password: hashedPassword,
-                name: userData.name,
+                name: userData.name.trim(),
             });
 
             // Never return the hashed password

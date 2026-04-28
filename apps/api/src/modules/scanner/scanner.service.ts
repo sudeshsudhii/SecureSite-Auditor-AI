@@ -153,10 +153,19 @@ export class ScannerService {
         httpStatus: response.status,
       };
 
-      // ── 10. AI Analysis (with fallback) ──
+      // ── 10. AI Analysis (with fallback + backend timeout guard) ──
       let aiAnalysis: any = null;
+      const SCAN_TIMEOUT_MS = 60_000; // 60s hard backend limit
+
       try {
-        aiAnalysis = await this.aiService.analyzePrivacy(scanData, config);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('AI analysis timed out after 60s')), SCAN_TIMEOUT_MS)
+        );
+
+        aiAnalysis = await Promise.race([
+          this.aiService.analyzePrivacy(scanData, config),
+          timeoutPromise,
+        ]);
 
         // If AI returned a rate-limited / unavailable response, enrich it with rule-based analysis
         if (aiAnalysis?.riskLevel === 'UNAVAILABLE' || aiAnalysis?._rateLimited || aiAnalysis?._quotaExceeded) {

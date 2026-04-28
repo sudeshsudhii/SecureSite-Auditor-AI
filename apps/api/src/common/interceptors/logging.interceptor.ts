@@ -16,13 +16,19 @@ export class LoggingInterceptor implements NestInterceptor {
         const now = Date.now();
         const isProd = process.env.NODE_ENV === 'production';
 
+        // Attach a short unique request ID for cross-layer tracing
+        const requestId = Math.random().toString(36).substring(2, 9);
+        request['id'] = requestId;
+
         return next.handle().pipe(
             tap(() => {
-                // In production log only slow requests (>1s) — in dev log everything
                 const elapsed = Date.now() - now;
-                if (!isProd || elapsed > 1000) {
+                // In production: only log slow requests (>1s) or errors
+                // In dev: log everything
+                if (!isProd || elapsed > 1000 || response.statusCode >= 400) {
                     console.log(
                         JSON.stringify({
+                            id: requestId,
                             method,
                             url,
                             status: response.statusCode,
@@ -35,6 +41,7 @@ export class LoggingInterceptor implements NestInterceptor {
                 // Always log errors regardless of env
                 console.error(
                     JSON.stringify({
+                        id: requestId,
                         url,
                         error: err.message,
                         status: err.status ?? 500,

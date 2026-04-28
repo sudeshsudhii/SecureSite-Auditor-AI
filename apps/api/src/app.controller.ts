@@ -20,18 +20,21 @@ export class AppController {
   @Get('health')
   async getHealth() {
     const memUsage = process.memoryUsage();
-    
+    let dbStatus = 'disconnected';
+
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      // Deep check: verify tables are reachable, not just the connection
+      await this.prisma.user.count();
+      dbStatus = 'connected';
     } catch (e) {
-      // DB connection failed
+      dbStatus = 'error';
     }
 
     return {
       status: 'ok',
       service: 'SecureSite Auditor API',
       api_status: 'running',
-      db_status: this.prisma.isDbActive ? 'connected' : 'disconnected',
+      db_status: dbStatus,
       memory: {
         rss: `${Math.round(memUsage.rss / 1024 / 1024)}MB`,
         heapUsed: `${Math.round(memUsage.heapUsed / 1024 / 1024)}MB`,
