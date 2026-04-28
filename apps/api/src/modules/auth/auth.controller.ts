@@ -9,24 +9,18 @@ import { CreateUserDto } from './dto/create-user.dto';
 export class AuthController {
     constructor(private authService: AuthService) { }
 
-    // Strict: 5 login attempts per minute per IP
-    @Throttle({ default: { limit: 5, ttl: 60000 } })
-    @UseGuards(LocalAuthGuard)
     @Post('login')
-    async login(@Request() req: any) {
-        return this.authService.login(req.user);
+    async login() {
+        return { message: 'Auth disabled' };
     }
 
-    // Strict: 5 registration attempts per minute per IP
-    @Throttle({ default: { limit: 5, ttl: 60000 } })
     @Post('register')
-    async register(@Body() createUserDto: CreateUserDto) {
-        return this.authService.register(createUserDto);
+    async register() {
+        return { message: 'Auth disabled' };
     }
 
-    @UseGuards(JwtAuthGuard)
     @Get('profile')
-    getProfile(@Request() req: any) {
-        return req.user;
+    getProfile() {
+        return { message: 'Auth disabled' };
     }
 }
