@@ -14,7 +14,7 @@ interface AuthContextType {
     token: string | null;
     isLoading: boolean;
     login: (email: string, password: string) => Promise<void>;
-    register: (name: string, email: string, password: string) => Promise<void>;
+    register: (name: string, email: string, password: string, confirmPassword: string) => Promise<void>;
     logout: () => void;
 }
 
@@ -60,8 +60,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
     }, []);
 
-    const register = useCallback(async (name: string, email: string, password: string) => {
-        await api.post('/auth/register', { name, email, password });
+    const register = useCallback(async (name: string, email: string, password: string, confirmPassword: string) => {
+        await api.post('/auth/register', { name, email, password, confirmPassword });
         // Auto-login after register
         await login(email, password);
     }, [login]);

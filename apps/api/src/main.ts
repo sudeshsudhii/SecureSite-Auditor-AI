@@ -68,6 +68,14 @@ async function bootstrap() {
   await app.listen(port);
   logger.log(`SecureSite Auditor API running on port ${port}`);
   logger.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
+  
+  // Structured startup diagnostics
+  console.log(JSON.stringify({
+    db: process.env.DB_PROVIDER || process.env.DATABASE_URL?.startsWith('file:') ? 'sqlite' : 'postgresql',
+    env: process.env.NODE_ENV || 'development',
+    port,
+    time: new Date().toISOString(),
+  }));
 }
 
 bootstrap();

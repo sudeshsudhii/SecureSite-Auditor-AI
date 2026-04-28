@@ -1,4 +1,5 @@
 import {
+    BadRequestException,
     ConflictException,
     Injectable,
     UnauthorizedException,
@@ -38,13 +39,29 @@ export class AuthService {
     }
 
     async register(dto: CreateUserDto) {
-        const hashedPassword = await bcrypt.hash(dto.password, 10); // cost factor 10 for serverless
+        console.log(
+            JSON.stringify({
+                route: 'register',
+                email: dto.email,
+                time: new Date().toISOString(),
+            }),
+        );
+
+        // Server-side password mismatch check
+        if (dto.password !== dto.confirmPassword) {
+            throw new BadRequestException('Passwords do not match');
+        }
+
+        // Strip confirmPassword — never store it
+        const { confirmPassword: _, ...userData } = dto;
+
+        const hashedPassword = await bcrypt.hash(userData.password, 10); // cost factor 10 for serverless
 
         try {
             const user = await this.usersService.create({
-                email: dto.email,
+                email: userData.email,
                 password: hashedPassword,
-                name: dto.name,
+                name: userData.name,
             });
 
             // Never return the hashed password

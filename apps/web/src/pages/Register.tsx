@@ -53,12 +53,11 @@ const Register: React.FC = () => {
         e.preventDefault();
         setError(null);
 
+        // Quick client-side checks before hitting the server
         if (form.password !== form.confirm) {
             setError('Passwords do not match.');
             return;
         }
-
-        // Frontend policy check
         const failed = POLICY_RULES.find(r => !r.test(form.password));
         if (failed) {
             setError(`Password issue: ${failed.label}`);
@@ -67,11 +66,12 @@ const Register: React.FC = () => {
 
         setLoading(true);
         try {
-            await register(form.name.trim(), form.email.trim(), form.password);
+            await register(form.name.trim(), form.email.trim(), form.password, form.confirm);
             navigate('/');
         } catch (err: any) {
             const msg =
                 err?.response?.data?.message ||
+                err?.response?.data?.error ||
                 err?.message ||
                 'Registration failed. Please try again.';
             setError(Array.isArray(msg) ? msg.join(' ') : msg);

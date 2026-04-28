@@ -2,8 +2,8 @@ import axios from 'axios';
 
 const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api',
-    // Default timeout to prevent hanging requests
-    timeout: 60000,
+    // 8s for auth requests; scan requests use per-request overrides
+    timeout: 8000,
 });
 
 // ── Client-side request throttle ──────────────────────────────────
@@ -38,6 +38,8 @@ api.interceptors.request.use(
                 );
             }
             lastScanRequestTime = now;
+            // Scans can take up to 90s — override the global 8s timeout
+            config.timeout = 90000;
         }
 
         return config;
@@ -60,9 +62,22 @@ api.interceptors.response.use(
 
             error.response.data = {
                 ...error.response.data,
-                message: `API rate limit exceeded. ${waitMsg} You can also try a different API key in Settings.`,
+                message: `Rate limit reached. ${waitMsg} You can also try a different API key in Settings.`,
                 _rateLimited: true,
             };
+        }
+
+        // Normalise error message to always be a string — backends return different shapes:
+        // { message: '...' } or { message: ['...', '...'] } or { error: '...' }
+        if (error.response?.data) {
+            const raw = error.response.data.message ?? error.response.data.error;
+            if (Array.isArray(raw)) {
+                error.response.data.message = raw.join(' ');
+            } else if (typeof raw === 'string') {
+                error.response.data.message = raw;
+            } else {
+                error.response.data.message = 'Something went wrong. Please try again.';
+            }
         }
 
         return Promise.reject(error);

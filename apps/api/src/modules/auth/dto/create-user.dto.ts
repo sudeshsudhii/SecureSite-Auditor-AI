@@ -38,4 +38,8 @@ export class CreateUserDto {
     @MinLength(2, { message: 'Name must be at least 2 characters.' })
     @MaxLength(80, { message: 'Name must not exceed 80 characters.' })
     name: string;
+
+    @IsString()
+    @IsNotEmpty({ message: 'Please confirm your password.' })
+    confirmPassword: string;
 }
