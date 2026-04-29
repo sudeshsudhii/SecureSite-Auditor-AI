@@ -156,6 +156,6 @@ The LLM is instructed to act as a **Privacy Compliance Officer**, returning a st
 - [ ] **User Accounts**: Multi-user support with saved history and preferences.
 - [ ] **Scheduled Scans**: cron-job based periodic auditing for continuous compliance.
 - [ ] **Dark Web Monitoring**: Check if the domain has been involved in known data breaches.
-
 ---
 
+<!-- Trigger redeployment -->
